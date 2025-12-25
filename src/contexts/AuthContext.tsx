@@ -1,58 +1,45 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { User, Session } from '@supabase/supabase-js';
+import { User as AuthUser, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
+import { 
+  UserRole, 
+  PersonnelPosition, 
+  StudentProfile, 
+  PersonnelProfile,
+  POSITION_LABELS 
+} from '@/types/database';
 
-export type AppRole = 
-  | 'student'
-  | 'department_head'
-  | 'associate_dean'
-  | 'dean'
-  | 'student_affairs'
-  | 'committee_member'
-  | 'committee_chairman'
-  | 'president';
-
-export const ROLE_LABELS: Record<AppRole, string> = {
-  student: 'นิสิต',
-  department_head: 'หัวหน้าภาควิชา',
-  associate_dean: 'รองคณบดี',
-  dean: 'คณบดี',
-  student_affairs: 'กองพัฒนานิสิต',
-  committee_member: 'คณะกรรมการ',
-  committee_chairman: 'ประธานคณะกรรมการ',
-  president: 'อธิการบดี',
-};
-
-interface Profile {
+interface UserData {
   id: string;
-  user_id: string;
-  full_name: string | null;
-  email: string | null;
-  student_id: string | null;
-  faculty: string | null;
-  department: string | null;
+  auth_user_id: string;
+  email: string;
+  role: UserRole;
+  is_active: boolean;
 }
 
 interface AuthContextType {
-  user: User | null;
+  authUser: AuthUser | null;
   session: Session | null;
-  profile: Profile | null;
-  roles: AppRole[];
+  user: UserData | null;
+  studentProfile: StudentProfile | null;
+  personnelProfile: PersonnelProfile | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
-  signUp: (email: string, password: string, fullName: string) => Promise<{ error: Error | null }>;
+  signUp: (email: string, password: string, firstName: string, lastName: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
-  isApprover: boolean;
-  hasRole: (role: AppRole) => boolean;
+  isStaff: boolean;
+  isAdmin: boolean;
+  getPositionLabel: () => string | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [roles, setRoles] = useState<AppRole[]>([]);
+  const [user, setUser] = useState<UserData | null>(null);
+  const [studentProfile, setStudentProfile] = useState<StudentProfile | null>(null);
+  const [personnelProfile, setPersonnelProfile] = useState<PersonnelProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -60,16 +47,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
         setSession(session);
-        setUser(session?.user ?? null);
+        setAuthUser(session?.user ?? null);
         
-        // Defer profile/roles fetch with setTimeout
+        // Defer user data fetch with setTimeout
         if (session?.user) {
           setTimeout(() => {
-            fetchProfileAndRoles(session.user.id);
+            fetchUserData(session.user.id);
           }, 0);
         } else {
-          setProfile(null);
-          setRoles([]);
+          setUser(null);
+          setStudentProfile(null);
+          setPersonnelProfile(null);
         }
       }
     );
@@ -77,9 +65,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // THEN check for existing session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      setUser(session?.user ?? null);
+      setAuthUser(session?.user ?? null);
       if (session?.user) {
-        fetchProfileAndRoles(session.user.id);
+        fetchUserData(session.user.id);
       } else {
         setLoading(false);
       }
@@ -88,28 +76,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  const fetchProfileAndRoles = async (userId: string) => {
+  const fetchUserData = async (authUserId: string) => {
     try {
-      // Fetch profile
-      const { data: profileData } = await supabase
-        .from('profiles')
+      // Fetch user record
+      const { data: userData } = await supabase
+        .from('users')
         .select('*')
-        .eq('user_id', userId)
+        .eq('auth_user_id', authUserId)
         .maybeSingle();
       
-      setProfile(profileData);
+      if (userData) {
+        setUser(userData as UserData);
 
-      // Fetch roles
-      const { data: rolesData } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', userId);
-      
-      if (rolesData) {
-        setRoles(rolesData.map(r => r.role as AppRole));
+        // Fetch student profile if student
+        if (userData.role === 'student') {
+          const { data: studentData } = await supabase
+            .from('student_profiles')
+            .select('*, department:departments(*, faculty:faculties(*))')
+            .eq('user_id', userData.id)
+            .maybeSingle();
+          
+          setStudentProfile(studentData as StudentProfile | null);
+        }
+
+        // Fetch personnel profile if staff/admin
+        if (userData.role === 'staff' || userData.role === 'admin') {
+          const { data: personnelData } = await supabase
+            .from('personnel_profiles')
+            .select('*, department:departments(*), faculty:faculties(*)')
+            .eq('user_id', userData.id)
+            .maybeSingle();
+          
+          setPersonnelProfile(personnelData as PersonnelProfile | null);
+        }
       }
     } catch (error) {
-      console.error('Error fetching profile/roles:', error);
+      console.error('Error fetching user data:', error);
     } finally {
       setLoading(false);
     }
@@ -120,7 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error };
   };
 
-  const signUp = async (email: string, password: string, fullName: string) => {
+  const signUp = async (email: string, password: string, firstName: string, lastName: string) => {
     const redirectUrl = `${window.location.origin}/`;
     
     const { error } = await supabase.auth.signUp({
@@ -128,7 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       password,
       options: {
         emailRedirectTo: redirectUrl,
-        data: { full_name: fullName }
+        data: { first_name: firstName, last_name: lastName }
       }
     });
     return { error };
@@ -136,30 +138,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     await supabase.auth.signOut();
-    setUser(null);
+    setAuthUser(null);
     setSession(null);
-    setProfile(null);
-    setRoles([]);
+    setUser(null);
+    setStudentProfile(null);
+    setPersonnelProfile(null);
   };
 
-  const isApprover = roles.some(role => 
-    ['department_head', 'associate_dean', 'dean', 'student_affairs', 'committee_member', 'committee_chairman', 'president'].includes(role)
-  );
+  const isStaff = user?.role === 'staff' || user?.role === 'admin';
+  const isAdmin = user?.role === 'admin';
 
-  const hasRole = (role: AppRole) => roles.includes(role);
+  const getPositionLabel = () => {
+    if (personnelProfile?.position) {
+      return POSITION_LABELS[personnelProfile.position];
+    }
+    return null;
+  };
 
   return (
     <AuthContext.Provider value={{
-      user,
+      authUser,
       session,
-      profile,
-      roles,
+      user,
+      studentProfile,
+      personnelProfile,
       loading,
       signIn,
       signUp,
       signOut,
-      isApprover,
-      hasRole,
+      isStaff,
+      isAdmin,
+      getPositionLabel,
     }}>
       {children}
     </AuthContext.Provider>
@@ -173,3 +182,7 @@ export function useAuth() {
   }
   return context;
 }
+
+// Re-export types for convenience
+export { POSITION_LABELS } from '@/types/database';
+export type { PersonnelPosition } from '@/types/database';

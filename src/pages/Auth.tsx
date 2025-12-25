@@ -15,7 +15,8 @@ const loginSchema = z.object({
 });
 
 const signupSchema = z.object({
-  fullName: z.string().min(2, 'กรุณากรอกชื่อ-นามสกุล').max(100),
+  firstName: z.string().min(1, 'กรุณากรอกชื่อ'),
+  lastName: z.string().min(1, 'กรุณากรอกนามสกุล'),
   email: z.string().email('อีเมลไม่ถูกต้อง'),
   password: z.string().min(6, 'รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร'),
   confirmPassword: z.string(),
@@ -31,7 +32,8 @@ export default function Auth() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   
   const [formData, setFormData] = useState({
-    fullName: '',
+    firstName: '',
+    lastName: '',
     email: '',
     password: '',
     confirmPassword: '',
@@ -39,14 +41,14 @@ export default function Auth() {
 
   const { toast } = useToast();
   const navigate = useNavigate();
-  const { signIn, signUp, user, loading: authLoading } = useAuth();
+  const { signIn, signUp, authUser, loading: authLoading } = useAuth();
 
   // Redirect if already logged in
   useEffect(() => {
-    if (!authLoading && user) {
+    if (!authLoading && authUser) {
       navigate('/');
     }
-  }, [user, authLoading, navigate]);
+  }, [authUser, authLoading, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -106,7 +108,7 @@ export default function Auth() {
           return;
         }
 
-        const { error } = await signUp(formData.email, formData.password, formData.fullName);
+        const { error } = await signUp(formData.email, formData.password, formData.firstName, formData.lastName);
         if (error) {
           if (error.message.includes('already registered')) {
             toast({
@@ -241,22 +243,42 @@ export default function Auth() {
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
                   exit={{ opacity: 0, height: 0 }}
+                  className="space-y-4"
                 >
-                  <Label htmlFor="fullName">ชื่อ-นามสกุล</Label>
-                  <div className="relative mt-1">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="fullName"
-                      type="text"
-                      placeholder="กรอกชื่อ-นามสกุล"
-                      className="pl-10"
-                      value={formData.fullName}
-                      onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-                    />
+                  <div>
+                    <Label htmlFor="firstName">ชื่อ</Label>
+                    <div className="relative mt-1">
+                      <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="firstName"
+                        type="text"
+                        placeholder="กรอกชื่อ"
+                        className="pl-10"
+                        value={formData.firstName}
+                        onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
+                      />
+                    </div>
+                    {errors.firstName && (
+                      <p className="text-sm text-destructive mt-1">{errors.firstName}</p>
+                    )}
                   </div>
-                  {errors.fullName && (
-                    <p className="text-sm text-destructive mt-1">{errors.fullName}</p>
-                  )}
+                  <div>
+                    <Label htmlFor="lastName">นามสกุล</Label>
+                    <div className="relative mt-1">
+                      <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="lastName"
+                        type="text"
+                        placeholder="กรอกนามสกุล"
+                        className="pl-10"
+                        value={formData.lastName}
+                        onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+                      />
+                    </div>
+                    {errors.lastName && (
+                      <p className="text-sm text-destructive mt-1">{errors.lastName}</p>
+                    )}
+                  </div>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -358,7 +380,7 @@ export default function Auth() {
                 onClick={() => {
                   setIsLogin(!isLogin);
                   setErrors({});
-                  setFormData({ fullName: '', email: '', password: '', confirmPassword: '' });
+                  setFormData({ firstName: '', lastName: '', email: '', password: '', confirmPassword: '' });
                 }}
               >
                 {isLogin ? 'สมัครสมาชิก' : 'เข้าสู่ระบบ'}
