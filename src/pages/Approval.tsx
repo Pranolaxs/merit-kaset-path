@@ -195,13 +195,13 @@ export default function Approval() {
         // Insert new vote
         const { error } = await supabase
           .from('nomination_votes')
-          .insert({
+          .insert([{
             nomination_id: selectedNomination.id,
             voter_id: user.id,
             vote: approve,
-            role: roles[0] as string,
+            role: roles[0],
             comment: voteComment || null,
-          });
+          }]);
 
         if (error) throw error;
       }
