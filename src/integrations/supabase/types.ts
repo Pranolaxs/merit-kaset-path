@@ -14,16 +14,177 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      nomination_votes: {
+        Row: {
+          comment: string | null
+          created_at: string | null
+          id: string
+          nomination_id: string
+          role: Database["public"]["Enums"]["app_role"]
+          vote: boolean
+          voter_id: string
+        }
+        Insert: {
+          comment?: string | null
+          created_at?: string | null
+          id?: string
+          nomination_id: string
+          role: Database["public"]["Enums"]["app_role"]
+          vote: boolean
+          voter_id: string
+        }
+        Update: {
+          comment?: string | null
+          created_at?: string | null
+          id?: string
+          nomination_id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          vote?: boolean
+          voter_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "nomination_votes_nomination_id_fkey"
+            columns: ["nomination_id"]
+            isOneToOne: false
+            referencedRelation: "nominations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      nominations: {
+        Row: {
+          academic_year: string
+          achievements: string | null
+          activity_hours: number | null
+          category: string
+          created_at: string | null
+          description: string | null
+          files: Json | null
+          gpa: number | null
+          id: string
+          semester: string
+          status: string | null
+          student_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          academic_year: string
+          achievements?: string | null
+          activity_hours?: number | null
+          category: string
+          created_at?: string | null
+          description?: string | null
+          files?: Json | null
+          gpa?: number | null
+          id?: string
+          semester: string
+          status?: string | null
+          student_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          academic_year?: string
+          achievements?: string | null
+          activity_hours?: number | null
+          category?: string
+          created_at?: string | null
+          description?: string | null
+          files?: Json | null
+          gpa?: number | null
+          id?: string
+          semester?: string
+          status?: string | null
+          student_id?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          created_at: string | null
+          department: string | null
+          email: string | null
+          faculty: string | null
+          full_name: string | null
+          id: string
+          student_id: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          department?: string | null
+          email?: string | null
+          faculty?: string | null
+          full_name?: string | null
+          id?: string
+          student_id?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          department?: string | null
+          email?: string | null
+          faculty?: string | null
+          full_name?: string | null
+          id?: string
+          student_id?: string | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          created_at: string | null
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_vote_percentage: {
+        Args: { nomination_uuid: string }
+        Returns: number
+      }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
+      is_approver: { Args: { _user_id: string }; Returns: boolean }
     }
     Enums: {
-      [_ in never]: never
+      app_role:
+        | "student"
+        | "department_head"
+        | "associate_dean"
+        | "dean"
+        | "student_affairs"
+        | "committee_member"
+        | "committee_chairman"
+        | "president"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +311,17 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: [
+        "student",
+        "department_head",
+        "associate_dean",
+        "dean",
+        "student_affairs",
+        "committee_member",
+        "committee_chairman",
+        "president",
+      ],
+    },
   },
 } as const
