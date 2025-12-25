@@ -42,7 +42,7 @@ CREATE TABLE public.users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     auth_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL UNIQUE,
     email TEXT NOT NULL,
-    role user_role NOT NULL DEFAULT 'staff',
+    role user_role NOT NULL DEFAULT 'student',
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()
