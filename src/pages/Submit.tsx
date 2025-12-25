@@ -1,24 +1,69 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ArrowRight, ArrowLeft, Upload, Plus, X, CheckCircle } from 'lucide-react';
+import { ArrowRight, ArrowLeft, Upload, Plus, X, CheckCircle, Loader2 } from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { CategoryCard } from '@/components/nomination/CategoryCard';
-import { AWARD_CATEGORIES, type AwardCategory } from '@/types/nomination';
 import { toast } from 'sonner';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
+import { AwardType, AcademicPeriod } from '@/types/database';
 
 type Step = 'category' | 'info' | 'achievements' | 'review';
 
 export default function Submit() {
+  const navigate = useNavigate();
+  const { user, studentProfile, loading: authLoading } = useAuth();
+  
   const [currentStep, setCurrentStep] = useState<Step>('category');
-  const [selectedCategory, setSelectedCategory] = useState<AwardCategory | null>(null);
+  const [awardTypes, setAwardTypes] = useState<AwardType[]>([]);
+  const [activePeriod, setActivePeriod] = useState<AcademicPeriod | null>(null);
+  const [selectedAwardType, setSelectedAwardType] = useState<AwardType | null>(null);
   const [description, setDescription] = useState('');
   const [achievements, setAchievements] = useState<string[]>(['']);
   const [activityHours, setActivityHours] = useState('');
+  const [projectName, setProjectName] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      navigate('/auth');
+    }
+  }, [user, authLoading, navigate]);
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const fetchData = async () => {
+    try {
+      // Fetch award types
+      const { data: typesData } = await supabase
+        .from('award_types')
+        .select('*')
+        .order('type_code');
+      
+      setAwardTypes((typesData || []) as AwardType[]);
+
+      // Fetch active period
+      const { data: periodData } = await supabase
+        .from('academic_periods')
+        .select('*')
+        .eq('is_active', true)
+        .maybeSingle();
+      
+      setActivePeriod(periodData as AcademicPeriod | null);
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const steps: { key: Step; label: string }[] = [
     { key: 'category', label: 'เลือกประเภท' },
@@ -30,7 +75,7 @@ export default function Submit() {
   const currentStepIndex = steps.findIndex((s) => s.key === currentStep);
 
   const handleNext = () => {
-    if (currentStep === 'category' && !selectedCategory) {
+    if (currentStep === 'category' && !selectedAwardType) {
       toast.error('กรุณาเลือกประเภทรางวัล');
       return;
     }
@@ -56,10 +101,41 @@ export default function Submit() {
     }
   };
 
-  const handleSubmit = () => {
-    toast.success('ส่งเสนอชื่อสำเร็จ!', {
-      description: 'ระบบได้รับข้อมูลของคุณแล้ว',
-    });
+  const handleSubmit = async () => {
+    if (!user || !activePeriod || !selectedAwardType) {
+      toast.error('ข้อมูลไม่ครบถ้วน');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const { error } = await supabase
+        .from('applications')
+        .insert([{
+          student_id: user.id,
+          period_id: activePeriod.id,
+          award_type_id: selectedAwardType.id,
+          project_name: projectName || null,
+          description: description,
+          achievements: achievements.filter(a => a.trim()).join('\n'),
+          activity_hours: activityHours ? parseInt(activityHours) : null,
+          current_status: 'submitted',
+        }]);
+
+      if (error) throw error;
+
+      toast.success('ส่งเสนอชื่อสำเร็จ!', {
+        description: 'ระบบได้รับข้อมูลของคุณแล้ว',
+      });
+      navigate('/nominations');
+    } catch (error) {
+      console.error('Error submitting:', error);
+      toast.error('เกิดข้อผิดพลาด', {
+        description: 'ไม่สามารถส่งเอกสารได้ กรุณาลองใหม่',
+      });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const addAchievement = () => {
@@ -76,6 +152,28 @@ export default function Submit() {
     setAchievements(updated);
   };
 
+  if (authLoading || loading) {
+    return (
+      <Layout>
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      </Layout>
+    );
+  }
+
+  if (!activePeriod) {
+    return (
+      <Layout>
+        <div className="container mx-auto px-4 py-16 text-center">
+          <h2 className="text-2xl font-bold mb-4">ไม่มีรอบการรับสมัครที่เปิดอยู่</h2>
+          <p className="text-muted-foreground mb-6">กรุณารอประกาศรอบการรับสมัครถัดไป</p>
+          <Button onClick={() => navigate('/')}>กลับหน้าหลัก</Button>
+        </div>
+      </Layout>
+    );
+  }
+
   return (
     <Layout>
       <div className="container mx-auto px-4 py-8 max-w-4xl">
@@ -86,7 +184,14 @@ export default function Submit() {
           className="text-center mb-8"
         >
           <h1 className="text-3xl font-bold text-foreground mb-2">เสนอตนเองเป็นนิสิตดีเด่น</h1>
-          <p className="text-muted-foreground">กรอกข้อมูลเพื่อเสนอตนเองสำหรับการพิจารณารางวัลนิสิตดีเด่น</p>
+          <p className="text-muted-foreground">
+            ปีการศึกษา {activePeriod.academic_year} ภาคเรียนที่ {activePeriod.semester}
+          </p>
+          {studentProfile && (
+            <p className="text-sm text-muted-foreground mt-2">
+              {studentProfile.first_name} {studentProfile.last_name} ({studentProfile.student_code || 'ไม่ระบุรหัส'})
+            </p>
+          )}
         </motion.div>
 
         {/* Progress Steps */}
@@ -97,7 +202,6 @@ export default function Submit() {
           className="mb-8"
         >
           <div className="flex items-center justify-between relative">
-            {/* Progress line */}
             <div className="absolute top-5 left-0 right-0 h-1 bg-muted rounded-full">
               <motion.div
                 initial={{ width: 0 }}
@@ -150,14 +254,32 @@ export default function Submit() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {(Object.keys(AWARD_CATEGORIES) as AwardCategory[]).map((category, index) => (
-                  <CategoryCard
-                    key={category}
-                    category={category}
-                    selected={selectedCategory === category}
-                    onClick={() => setSelectedCategory(category)}
-                    index={index}
-                  />
+                {awardTypes.map((type) => (
+                  <motion.div
+                    key={type.id}
+                    whileHover={{ scale: 1.01 }}
+                    whileTap={{ scale: 0.99 }}
+                    onClick={() => setSelectedAwardType(type)}
+                    className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                      selectedAwardType?.id === type.id
+                        ? 'border-primary bg-primary/5'
+                        : 'border-border hover:border-primary/50'
+                    }`}
+                  >
+                    <div className="flex items-start gap-4">
+                      <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center text-2xl">
+                        {type.type_code === 'extracurricular' ? '🎭' : 
+                         type.type_code === 'creativity' ? '💡' : '⭐'}
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="font-semibold">{type.type_name}</h3>
+                        <p className="text-sm text-muted-foreground">{type.description}</p>
+                      </div>
+                      {selectedAwardType?.id === type.id && (
+                        <CheckCircle className="h-6 w-6 text-primary" />
+                      )}
+                    </div>
+                  </motion.div>
                 ))}
               </CardContent>
             </Card>
@@ -170,6 +292,18 @@ export default function Submit() {
                 <CardDescription>กรอกข้อมูลเกี่ยวกับตัวคุณและเหตุผลในการเสนอตนเอง</CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
+                {selectedAwardType?.type_code === 'creativity' && (
+                  <div className="space-y-2">
+                    <Label htmlFor="projectName">ชื่อโครงการ/นวัตกรรม</Label>
+                    <Input
+                      id="projectName"
+                      placeholder="ระบุชื่อโครงการหรือนวัตกรรมของคุณ"
+                      value={projectName}
+                      onChange={(e) => setProjectName(e.target.value)}
+                    />
+                  </div>
+                )}
+
                 <div className="space-y-2">
                   <Label htmlFor="description">เหตุผลในการเสนอตนเอง *</Label>
                   <Textarea
@@ -182,9 +316,9 @@ export default function Submit() {
                   />
                 </div>
 
-                {selectedCategory === 'extracurricular' && (
+                {selectedAwardType?.type_code === 'extracurricular' && (
                   <div className="space-y-2">
-                    <Label htmlFor="hours">จำนวนชั่วโมงกิจกรรม *</Label>
+                    <Label htmlFor="hours">จำนวนชั่วโมงกิจกรรม</Label>
                     <Input
                       id="hours"
                       type="number"
@@ -250,7 +384,7 @@ export default function Submit() {
             </Card>
           )}
 
-          {currentStep === 'review' && selectedCategory && (
+          {currentStep === 'review' && selectedAwardType && (
             <Card className="border-border/50">
               <CardHeader>
                 <CardTitle>ตรวจสอบข้อมูล</CardTitle>
@@ -259,11 +393,17 @@ export default function Submit() {
               <CardContent className="space-y-6">
                 <div className="p-4 rounded-lg bg-secondary/50">
                   <p className="text-sm text-muted-foreground mb-1">ประเภทรางวัล</p>
-                  <p className="font-medium text-foreground flex items-center gap-2">
-                    <span>{AWARD_CATEGORIES[selectedCategory].icon}</span>
-                    {AWARD_CATEGORIES[selectedCategory].label}
+                  <p className="font-medium text-foreground">
+                    {selectedAwardType.type_name}
                   </p>
                 </div>
+
+                {projectName && (
+                  <div className="p-4 rounded-lg bg-secondary/50">
+                    <p className="text-sm text-muted-foreground mb-1">ชื่อโครงการ</p>
+                    <p className="text-foreground">{projectName}</p>
+                  </div>
+                )}
 
                 <div className="p-4 rounded-lg bg-secondary/50">
                   <p className="text-sm text-muted-foreground mb-1">เหตุผลในการเสนอตนเอง</p>
@@ -284,7 +424,7 @@ export default function Submit() {
                       .filter((a) => a.trim())
                       .map((achievement, index) => (
                         <li key={index} className="flex items-start gap-2">
-                          <CheckCircle className="h-4 w-4 text-success shrink-0 mt-0.5" />
+                          <CheckCircle className="h-4 w-4 text-green-600 shrink-0 mt-0.5" />
                           <span className="text-foreground">{achievement}</span>
                         </li>
                       ))}
@@ -313,9 +453,23 @@ export default function Submit() {
           </Button>
 
           {currentStep === 'review' ? (
-            <Button variant="hero" onClick={handleSubmit} className="gap-2">
-              ส่งเสนอชื่อ
-              <CheckCircle className="h-4 w-4" />
+            <Button 
+              variant="hero" 
+              onClick={handleSubmit} 
+              className="gap-2"
+              disabled={submitting}
+            >
+              {submitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  กำลังส่ง...
+                </>
+              ) : (
+                <>
+                  ส่งเสนอชื่อ
+                  <CheckCircle className="h-4 w-4" />
+                </>
+              )}
             </Button>
           ) : (
             <Button variant="hero" onClick={handleNext} className="gap-2">
