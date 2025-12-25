@@ -10,25 +10,25 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useAuth, ROLE_LABELS } from '@/contexts/AuthContext';
+import { useAuth, POSITION_LABELS } from '@/contexts/AuthContext';
 import { Badge } from '@/components/ui/badge';
 
 const navItems = [
   { path: '/', label: 'หน้าหลัก' },
   { path: '/nominations', label: 'รายการเสนอชื่อ' },
   { path: '/submit', label: 'เสนอตนเอง' },
-  { path: '/approval', label: 'อนุมัติ', requiresApprover: true },
+  { path: '/approval', label: 'อนุมัติ', requiresStaff: true },
 ];
 
 export function Header() {
   const location = useLocation();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const { user, profile, roles, signOut, isApprover } = useAuth();
+  const { authUser, user, studentProfile, personnelProfile, signOut, isStaff, getPositionLabel } = useAuth();
 
   const filteredNavItems = navItems.filter(item => {
-    if (item.requiresApprover) {
-      return isApprover;
+    if (item.requiresStaff) {
+      return isStaff;
     }
     return true;
   });
@@ -36,6 +36,16 @@ export function Header() {
   const handleSignOut = async () => {
     await signOut();
     navigate('/');
+  };
+
+  const getDisplayName = () => {
+    if (studentProfile) {
+      return `${studentProfile.first_name} ${studentProfile.last_name}`;
+    }
+    if (personnelProfile) {
+      return `${personnelProfile.first_name} ${personnelProfile.last_name}`;
+    }
+    return user?.email?.split('@')[0] || 'ผู้ใช้';
   };
 
   return (
@@ -90,7 +100,7 @@ export function Header() {
 
           {/* Right Section */}
           <div className="flex items-center gap-2">
-            {user ? (
+            {authUser ? (
               <>
                 {/* Notifications */}
                 <Button variant="ghost" size="icon" className="relative">
@@ -108,21 +118,19 @@ export function Header() {
                         <User className="h-4 w-4 text-primary" />
                       </div>
                       <span className="hidden sm:inline text-sm font-medium">
-                        {profile?.full_name || user.email?.split('@')[0]}
+                        {getDisplayName()}
                       </span>
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-56">
                     <div className="px-2 py-1.5">
-                      <p className="text-sm font-medium">{profile?.full_name}</p>
-                      <p className="text-xs text-muted-foreground">{user.email}</p>
-                      <div className="flex flex-wrap gap-1 mt-2">
-                        {roles.map((role) => (
-                          <Badge key={role} variant="secondary" className="text-xs">
-                            {ROLE_LABELS[role]}
-                          </Badge>
-                        ))}
-                      </div>
+                      <p className="text-sm font-medium">{getDisplayName()}</p>
+                      <p className="text-xs text-muted-foreground">{user?.email}</p>
+                      {personnelProfile?.position && (
+                        <Badge variant="secondary" className="text-xs mt-2">
+                          {POSITION_LABELS[personnelProfile.position]}
+                        </Badge>
+                      )}
                     </div>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem>
@@ -185,7 +193,7 @@ export function Header() {
                   </Link>
                 );
               })}
-              {!user && (
+              {!authUser && (
                 <Link
                   to="/auth"
                   onClick={() => setMobileMenuOpen(false)}
