@@ -18,15 +18,19 @@ const navItems = [
   { path: '/nominations', label: 'รายการเสนอชื่อ' },
   { path: '/submit', label: 'เสนอตนเอง' },
   { path: '/approval', label: 'อนุมัติ', requiresStaff: true },
+  { path: '/admin', label: 'จัดการระบบ', requiresAdmin: true },
 ];
 
 export function Header() {
   const location = useLocation();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const { authUser, user, studentProfile, personnelProfile, signOut, isStaff, getPositionLabel } = useAuth();
+  const { authUser, user, studentProfile, personnelProfile, signOut, isStaff, isAdmin, getPositionLabel } = useAuth();
 
   const filteredNavItems = navItems.filter(item => {
+    if (item.requiresAdmin) {
+      return isAdmin;
+    }
     if (item.requiresStaff) {
       return isStaff;
     }

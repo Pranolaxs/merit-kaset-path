@@ -10,6 +10,7 @@ import NominationDetail from "./pages/NominationDetail";
 import Submit from "./pages/Submit";
 import Approval from "./pages/Approval";
 import Auth from "./pages/Auth";
+import Admin from "./pages/Admin";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -28,6 +29,7 @@ const App = () => (
             <Route path="/nominations/:id" element={<NominationDetail />} />
             <Route path="/submit" element={<Submit />} />
             <Route path="/approval" element={<Approval />} />
+            <Route path="/admin" element={<Admin />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
