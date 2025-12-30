@@ -6,17 +6,21 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Users, Building2, GraduationCap, Shield } from 'lucide-react';
+import { Users, Building2, GraduationCap, Shield, MapPin } from 'lucide-react';
 import { POSITION_LABELS } from '@/types/database';
 import type { PersonnelPosition } from '@/types/database';
+import { CampusManagement } from '@/components/admin/CampusManagement';
+import { RoleManagement } from '@/components/admin/RoleManagement';
+import type { Campus } from '@/types/roles';
 
 interface Faculty {
   id: string;
   faculty_code: string;
   faculty_name: string;
+  campus_id: string | null;
+  campus?: Campus;
 }
 
 interface Department {
@@ -49,6 +53,7 @@ export default function Admin() {
   const [faculties, setFaculties] = useState<Faculty[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [users, setUsers] = useState<UserWithProfile[]>([]);
+  const [campuses, setCampuses] = useState<Campus[]>([]);
   const [loadingData, setLoadingData] = useState(true);
 
   useEffect(() => {
@@ -60,23 +65,26 @@ export default function Admin() {
   const fetchData = async () => {
     setLoadingData(true);
     try {
-      const [facultiesRes, departmentsRes, usersRes] = await Promise.all([
-        supabase.from('faculties').select('*').order('faculty_code'),
+      const [facultiesRes, departmentsRes, usersRes, campusesRes] = await Promise.all([
+        supabase.from('faculties').select('*, campus:campuses(*)').order('faculty_code'),
         supabase.from('departments').select('*, faculty:faculties(*)').order('dept_code'),
         supabase.from('users').select(`
           *,
           student_profile:student_profiles(first_name, last_name, student_code),
           personnel_profile:personnel_profiles(first_name, last_name, position)
-        `).order('email')
+        `).order('email'),
+        supabase.from('campuses').select('*').order('campus_code'),
       ]);
 
       if (facultiesRes.error) throw facultiesRes.error;
       if (departmentsRes.error) throw departmentsRes.error;
       if (usersRes.error) throw usersRes.error;
+      if (campusesRes.error) throw campusesRes.error;
 
       setFaculties(facultiesRes.data || []);
       setDepartments(departmentsRes.data || []);
       setUsers((usersRes.data as unknown as UserWithProfile[]) || []);
+      setCampuses(campusesRes.data || []);
     } catch (error: unknown) {
       console.error('Error fetching data:', error);
       toast.error('เกิดข้อผิดพลาดในการโหลดข้อมูล');
@@ -134,25 +142,51 @@ export default function Admin() {
             จัดการระบบ
           </h1>
           <p className="text-muted-foreground mt-2">
-            จัดการผู้ใช้ คณะ ภาควิชา และข้อมูลระบบ
+            จัดการผู้ใช้ บทบาท วิทยาเขต คณะ และภาควิชา
           </p>
         </div>
 
-        <Tabs defaultValue="users" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 lg:w-[400px]">
+        <Tabs defaultValue="roles" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-5 lg:w-[600px]">
+            <TabsTrigger value="roles" className="flex items-center gap-2">
+              <Shield className="h-4 w-4" />
+              <span className="hidden sm:inline">บทบาท</span>
+            </TabsTrigger>
+            <TabsTrigger value="campuses" className="flex items-center gap-2">
+              <MapPin className="h-4 w-4" />
+              <span className="hidden sm:inline">วิทยาเขต</span>
+            </TabsTrigger>
             <TabsTrigger value="users" className="flex items-center gap-2">
               <Users className="h-4 w-4" />
-              ผู้ใช้
+              <span className="hidden sm:inline">ผู้ใช้</span>
             </TabsTrigger>
             <TabsTrigger value="faculties" className="flex items-center gap-2">
               <Building2 className="h-4 w-4" />
-              คณะ
+              <span className="hidden sm:inline">คณะ</span>
             </TabsTrigger>
             <TabsTrigger value="departments" className="flex items-center gap-2">
               <GraduationCap className="h-4 w-4" />
-              ภาควิชา
+              <span className="hidden sm:inline">ภาควิชา</span>
             </TabsTrigger>
           </TabsList>
+
+          {/* Roles Tab */}
+          <TabsContent value="roles">
+            <RoleManagement 
+              campuses={campuses} 
+              loading={loadingData} 
+              onRefresh={fetchData} 
+            />
+          </TabsContent>
+
+          {/* Campuses Tab */}
+          <TabsContent value="campuses">
+            <CampusManagement 
+              campuses={campuses} 
+              loading={loadingData} 
+              onRefresh={fetchData} 
+            />
+          </TabsContent>
 
           {/* Users Tab */}
           <TabsContent value="users">
@@ -160,7 +194,7 @@ export default function Admin() {
               <CardHeader>
                 <CardTitle>รายชื่อผู้ใช้ทั้งหมด</CardTitle>
                 <CardDescription>
-                  จัดการผู้ใช้และสิทธิ์การเข้าถึงระบบ
+                  ผู้ใช้ที่ลงทะเบียนในระบบ (ใช้แท็บ "บทบาท" เพื่อกำหนดสิทธิ์)
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -174,7 +208,7 @@ export default function Admin() {
                       <TableRow>
                         <TableHead>ชื่อ-นามสกุล</TableHead>
                         <TableHead>อีเมล</TableHead>
-                        <TableHead>ประเภท</TableHead>
+                        <TableHead>ประเภท (เดิม)</TableHead>
                         <TableHead>ตำแหน่ง</TableHead>
                         <TableHead>สถานะ</TableHead>
                       </TableRow>
@@ -246,13 +280,14 @@ export default function Admin() {
                       <TableRow>
                         <TableHead>รหัสคณะ</TableHead>
                         <TableHead>ชื่อคณะ</TableHead>
+                        <TableHead>วิทยาเขต</TableHead>
                         <TableHead>จำนวนภาควิชา</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {faculties.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={3} className="text-center text-muted-foreground py-8">
+                          <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
                             ยังไม่มีข้อมูลคณะ
                           </TableCell>
                         </TableRow>
@@ -263,6 +298,13 @@ export default function Admin() {
                               <Badge variant="outline">{faculty.faculty_code}</Badge>
                             </TableCell>
                             <TableCell className="font-medium">{faculty.faculty_name}</TableCell>
+                            <TableCell>
+                              {faculty.campus ? (
+                                <Badge variant="secondary">{faculty.campus.campus_name}</Badge>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              )}
+                            </TableCell>
                             <TableCell>
                               {departments.filter(d => d.faculty_id === faculty.id).length} ภาควิชา
                             </TableCell>

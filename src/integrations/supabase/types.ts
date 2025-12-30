@@ -17,6 +17,7 @@ export type Database = {
       academic_periods: {
         Row: {
           academic_year: number
+          campus_id: string | null
           created_at: string | null
           end_date: string
           id: string
@@ -27,6 +28,7 @@ export type Database = {
         }
         Insert: {
           academic_year: number
+          campus_id?: string | null
           created_at?: string | null
           end_date: string
           id?: string
@@ -37,6 +39,7 @@ export type Database = {
         }
         Update: {
           academic_year?: number
+          campus_id?: string | null
           created_at?: string | null
           end_date?: string
           id?: string
@@ -45,7 +48,15 @@ export type Database = {
           start_date?: string
           updated_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "academic_periods_campus_id_fkey"
+            columns: ["campus_id"]
+            isOneToOne: false
+            referencedRelation: "campuses"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       application_attachments: {
         Row: {
@@ -87,6 +98,7 @@ export type Database = {
           achievements: string | null
           activity_hours: number | null
           award_type_id: string
+          campus_id: string | null
           created_at: string | null
           current_status:
             | Database["public"]["Enums"]["application_status"]
@@ -102,6 +114,7 @@ export type Database = {
           achievements?: string | null
           activity_hours?: number | null
           award_type_id: string
+          campus_id?: string | null
           created_at?: string | null
           current_status?:
             | Database["public"]["Enums"]["application_status"]
@@ -117,6 +130,7 @@ export type Database = {
           achievements?: string | null
           activity_hours?: number | null
           award_type_id?: string
+          campus_id?: string | null
           created_at?: string | null
           current_status?:
             | Database["public"]["Enums"]["application_status"]
@@ -134,6 +148,13 @@ export type Database = {
             columns: ["award_type_id"]
             isOneToOne: false
             referencedRelation: "award_types"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "applications_campus_id_fkey"
+            columns: ["campus_id"]
+            isOneToOne: false
+            referencedRelation: "campuses"
             referencedColumns: ["id"]
           },
           {
@@ -230,6 +251,30 @@ export type Database = {
         }
         Relationships: []
       }
+      campuses: {
+        Row: {
+          campus_code: string
+          campus_name: string
+          created_at: string | null
+          id: string
+          updated_at: string | null
+        }
+        Insert: {
+          campus_code: string
+          campus_name: string
+          created_at?: string | null
+          id?: string
+          updated_at?: string | null
+        }
+        Update: {
+          campus_code?: string
+          campus_name?: string
+          created_at?: string | null
+          id?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       committee_votes: {
         Row: {
           application_id: string
@@ -309,6 +354,7 @@ export type Database = {
       }
       faculties: {
         Row: {
+          campus_id: string | null
           created_at: string | null
           faculty_code: string
           faculty_name: string
@@ -316,6 +362,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          campus_id?: string | null
           created_at?: string | null
           faculty_code: string
           faculty_name: string
@@ -323,13 +370,22 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          campus_id?: string | null
           created_at?: string | null
           faculty_code?: string
           faculty_name?: string
           id?: string
           updated_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "faculties_campus_id_fkey"
+            columns: ["campus_id"]
+            isOneToOne: false
+            referencedRelation: "campuses"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       personnel_profiles: {
         Row: {
@@ -440,6 +496,68 @@ export type Database = {
           },
         ]
       }
+      user_roles: {
+        Row: {
+          campus_id: string | null
+          created_at: string | null
+          department_id: string | null
+          faculty_id: string | null
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          campus_id?: string | null
+          created_at?: string | null
+          department_id?: string | null
+          faculty_id?: string | null
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          campus_id?: string | null
+          created_at?: string | null
+          department_id?: string | null
+          faculty_id?: string | null
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_roles_campus_id_fkey"
+            columns: ["campus_id"]
+            isOneToOne: false
+            referencedRelation: "campuses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_roles_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_roles_faculty_id_fkey"
+            columns: ["faculty_id"]
+            isOneToOne: false
+            referencedRelation: "faculties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_roles_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       users: {
         Row: {
           auth_user_id: string
@@ -475,10 +593,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      can_access_campus: {
+        Args: { _campus_id: string; _user_id: string }
+        Returns: boolean
+      }
       get_personnel_position: {
         Args: { auth_id: string }
         Returns: Database["public"]["Enums"]["personnel_position"]
       }
+      get_user_campus_id: { Args: { _user_id: string }; Returns: string }
       get_user_id: { Args: { auth_id: string }; Returns: string }
       get_user_role: {
         Args: { auth_id: string }
@@ -488,10 +611,34 @@ export type Database = {
         Args: { nomination_uuid: string }
         Returns: number
       }
+      has_any_app_role: {
+        Args: {
+          _roles: Database["public"]["Enums"]["app_role"][]
+          _user_id: string
+        }
+        Returns: boolean
+      }
+      has_app_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
       is_approver: { Args: { _user_id: string }; Returns: boolean }
       is_staff_or_admin: { Args: { auth_id: string }; Returns: boolean }
     }
     Enums: {
+      app_role:
+        | "student"
+        | "department_head"
+        | "associate_dean"
+        | "dean"
+        | "student_affairs"
+        | "committee_member"
+        | "committee_chairman"
+        | "president"
+        | "system_admin"
       application_status:
         | "draft"
         | "submitted"
@@ -639,6 +786,17 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      app_role: [
+        "student",
+        "department_head",
+        "associate_dean",
+        "dean",
+        "student_affairs",
+        "committee_member",
+        "committee_chairman",
+        "president",
+        "system_admin",
+      ],
       application_status: [
         "draft",
         "submitted",
