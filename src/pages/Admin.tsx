@@ -8,12 +8,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Users, Building2, GraduationCap, Shield, MapPin, UserCheck } from 'lucide-react';
+import { Users, Building2, GraduationCap, Shield, MapPin, UserCheck, BarChart3, Settings } from 'lucide-react';
 import { POSITION_LABELS } from '@/types/database';
 import type { PersonnelPosition } from '@/types/database';
 import { CampusManagement } from '@/components/admin/CampusManagement';
 import { RoleManagement } from '@/components/admin/RoleManagement';
 import { CommitteeManagement } from '@/components/admin/CommitteeManagement';
+import { SystemConfiguration } from '@/components/admin/SystemConfiguration';
+import { StatisticsCharts } from '@/components/dashboard/StatisticsCharts';
+import { ReportExport } from '@/components/dashboard/ReportExport';
 import type { Campus } from '@/types/roles';
 
 interface Faculty {
@@ -147,8 +150,16 @@ export default function Admin() {
           </p>
         </div>
 
-        <Tabs defaultValue="roles" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-6 lg:w-[720px]">
+        <Tabs defaultValue="dashboard" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-4 lg:grid-cols-8 lg:w-[960px]">
+            <TabsTrigger value="dashboard" className="flex items-center gap-2">
+              <BarChart3 className="h-4 w-4" />
+              <span className="hidden sm:inline">สถิติ</span>
+            </TabsTrigger>
+            <TabsTrigger value="config" className="flex items-center gap-2">
+              <Settings className="h-4 w-4" />
+              <span className="hidden sm:inline">ตั้งค่า</span>
+            </TabsTrigger>
             <TabsTrigger value="roles" className="flex items-center gap-2">
               <Shield className="h-4 w-4" />
               <span className="hidden sm:inline">บทบาท</span>
@@ -174,6 +185,21 @@ export default function Admin() {
               <span className="hidden sm:inline">ภาควิชา</span>
             </TabsTrigger>
           </TabsList>
+
+          {/* Dashboard Tab */}
+          <TabsContent value="dashboard" className="space-y-6">
+            <StatisticsCharts />
+            <ReportExport />
+          </TabsContent>
+
+          {/* System Configuration Tab */}
+          <TabsContent value="config">
+            <SystemConfiguration 
+              campuses={campuses} 
+              loading={loadingData} 
+              onRefresh={fetchData} 
+            />
+          </TabsContent>
 
           {/* Roles Tab */}
           <TabsContent value="roles">
