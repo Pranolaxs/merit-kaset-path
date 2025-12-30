@@ -1,33 +1,21 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Search, 
   Filter, 
-  Users, 
-  MessageSquare,
-  ThumbsUp,
-  ThumbsDown,
   Loader2,
   AlertCircle,
-  CheckCircle,
-  XCircle,
-  ArrowRight
+  Eye,
+  Users,
+  ChevronRight
 } from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Textarea } from '@/components/ui/textarea';
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
-  DialogTitle,
-  DialogDescription,
-  DialogFooter 
-} from '@/components/ui/dialog';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import {
   Select,
   SelectContent,
@@ -35,18 +23,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useAuth, POSITION_LABELS } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { useToast } from '@/hooks/use-toast';
-import { 
-  Application, 
-  ApplicationStatus, 
-  STATUS_CONFIG,
-  WORKFLOW_STEPS,
-  AwardType,
-  CommitteeVote
-} from '@/types/database';
+import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
+import { useApprovalRoles } from '@/hooks/useApprovalRoles';
+import { WorkflowTimeline } from '@/components/approval/WorkflowTimeline';
+import { ApprovalActions } from '@/components/approval/ApprovalActions';
+import { ApprovalHistory } from '@/components/approval/ApprovalHistory';
+import { STATUS_CONFIG } from '@/types/database';
+import { APP_ROLE_LABELS } from '@/types/roles';
+import type { WorkflowStatus } from '@/types/workflow';
+import type { AwardType, CommitteeVote, ApplicationStatus } from '@/types/database';
 
 interface ApplicationWithDetails {
   id: string;
@@ -58,16 +46,20 @@ interface ApplicationWithDetails {
   achievements: string | null;
   activity_hours: number | null;
   current_status: string;
+  campus_id: string | null;
   created_at: string;
   student_profile?: {
     first_name: string;
     last_name: string;
     student_code: string | null;
     gpax: number | null;
+    department_id: string | null;
     department?: {
       dept_name: string;
+      faculty_id: string;
       faculty?: {
         faculty_name: string;
+        campus_id: string | null;
       };
     };
   };
@@ -80,8 +72,8 @@ interface ApplicationWithDetails {
 }
 
 export default function Approval() {
-  const { user, personnelProfile, isStaff, loading: authLoading } = useAuth();
-  const { toast } = useToast();
+  const { user, loading: authLoading } = useAuth();
+  const { approverRoles, isCommitteeMember, canReviewApplication, loading: rolesLoading } = useApprovalRoles();
   const navigate = useNavigate();
   
   const [applications, setApplications] = useState<ApplicationWithDetails[]>([]);
@@ -89,11 +81,12 @@ export default function Approval() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
-  const [selectedApplication, setSelectedApplication] = useState<ApplicationWithDetails | null>(null);
-  const [voteDialogOpen, setVoteDialogOpen] = useState(false);
-  const [actionDialogOpen, setActionDialogOpen] = useState(false);
-  const [voteComment, setVoteComment] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [selectedApp, setSelectedApp] = useState<ApplicationWithDetails | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  const hasApproverAccess = approverRoles.length > 0;
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -102,23 +95,20 @@ export default function Approval() {
   }, [user, authLoading, navigate]);
 
   useEffect(() => {
-    if (user && isStaff) {
+    if (user && !rolesLoading) {
       fetchApplications();
       fetchAwardTypes();
-    } else if (user && !isStaff) {
-      setLoading(false);
     }
-  }, [user, isStaff]);
+  }, [user, rolesLoading]);
 
   const fetchAwardTypes = async () => {
     const { data } = await supabase.from('award_types').select('*');
     setAwardTypes((data || []) as AwardType[]);
   };
 
-  const fetchApplications = async () => {
+  const fetchApplications = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch applications with related data
       const { data: appsData, error } = await supabase
         .from('applications')
         .select(`
@@ -131,17 +121,9 @@ export default function Approval() {
 
       if (error) throw error;
 
-      // Fetch student profiles for each application
       const studentIds = appsData?.map(a => a.student_id) || [];
       
       if (studentIds.length > 0) {
-        const { data: studentsData } = await supabase
-          .from('users')
-          .select('id')
-          .in('id', studentIds);
-
-        const userIds = studentsData?.map(s => s.id) || [];
-        
         const { data: profilesData } = await supabase
           .from('student_profiles')
           .select(`
@@ -150,14 +132,14 @@ export default function Approval() {
             last_name,
             student_code,
             gpax,
-            department:departments(dept_name, faculty:faculties(faculty_name))
+            department_id,
+            department:departments(dept_name, faculty_id, faculty:faculties(faculty_name, campus_id))
           `)
-          .in('user_id', userIds);
+          .in('user_id', studentIds);
 
         const profilesMap: Record<string, typeof profilesData[0]> = {};
         profilesData?.forEach(p => { profilesMap[p.user_id] = p; });
 
-        // Fetch votes for applications
         const appIds = appsData?.map(a => a.id) || [];
         const { data: votesData } = await supabase
           .from('committee_votes')
@@ -182,151 +164,40 @@ export default function Approval() {
       }
     } catch (error) {
       console.error('Error fetching applications:', error);
-      toast({
-        title: 'เกิดข้อผิดพลาด',
-        description: 'ไม่สามารถโหลดข้อมูลได้',
-        variant: 'destructive',
-      });
+      toast.error('เกิดข้อผิดพลาดในการโหลดข้อมูล');
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  const handleActionComplete = () => {
+    setRefreshTrigger(prev => prev + 1);
+    fetchApplications();
   };
 
-  const handleVote = async (isAgree: boolean) => {
-    if (!selectedApplication || !user) return;
-
-    setSubmitting(true);
-    try {
-      // Check if already voted
-      const existingVote = selectedApplication.votes?.find(v => v.committee_id === user.id);
-      
-      if (existingVote) {
-        const { error } = await supabase
-          .from('committee_votes')
-          .update({
-            is_agree: isAgree,
-            comment: voteComment || null,
-          })
-          .eq('id', existingVote.id);
-
-        if (error) throw error;
-      } else {
-        const { error } = await supabase
-          .from('committee_votes')
-          .insert([{
-            application_id: selectedApplication.id,
-            committee_id: user.id,
-            is_agree: isAgree,
-            comment: voteComment || null,
-          }]);
-
-        if (error) throw error;
-      }
-
-      toast({
-        title: isAgree ? 'เห็นชอบเรียบร้อย' : 'ไม่เห็นชอบเรียบร้อย',
-        description: 'บันทึกผลการโหวตแล้ว',
-      });
-
-      setVoteDialogOpen(false);
-      setVoteComment('');
-      fetchApplications();
-    } catch (error) {
-      console.error('Error voting:', error);
-      toast({
-        title: 'เกิดข้อผิดพลาด',
-        description: 'ไม่สามารถบันทึกผลการโหวตได้',
-        variant: 'destructive',
-      });
-    } finally {
-      setSubmitting(false);
-    }
+  const openDetail = (app: ApplicationWithDetails) => {
+    setSelectedApp(app);
+    setDetailOpen(true);
   };
 
-  const handleApprove = async (approve: boolean) => {
-    if (!selectedApplication || !user || !personnelProfile) return;
-
-    setSubmitting(true);
-    try {
-      const currentStatus = selectedApplication.current_status as ApplicationStatus;
-      let nextStatus: ApplicationStatus;
-
-      if (approve) {
-        // Determine next status based on current status
-        const statusFlow: Record<ApplicationStatus, ApplicationStatus> = {
-          submitted: 'dept_review',
-          dept_review: 'faculty_review',
-          faculty_review: 'student_affairs_review',
-          student_affairs_review: 'committee_review',
-          committee_review: 'chairman_review',
-          chairman_review: 'president_review',
-          president_review: 'approved',
-          draft: 'submitted',
-          approved: 'approved',
-          rejected: 'rejected',
-        };
-        nextStatus = statusFlow[currentStatus] || 'approved';
-      } else {
-        nextStatus = 'rejected';
-      }
-
-      // Update application status
-      const { error: updateError } = await supabase
-        .from('applications')
-        .update({ current_status: nextStatus })
-        .eq('id', selectedApplication.id);
-
-      if (updateError) throw updateError;
-
-      // Create approval log
-      const { error: logError } = await supabase
-        .from('approval_logs')
-        .insert([{
-          application_id: selectedApplication.id,
-          actor_id: user.id,
-          action_type: approve ? 'approve' : 'reject',
-          from_status: currentStatus,
-          to_status: nextStatus,
-          comment: voteComment || null,
-        }]);
-
-      if (logError) throw logError;
-
-      toast({
-        title: approve ? 'อนุมัติเรียบร้อย' : 'ไม่อนุมัติ',
-        description: `สถานะเปลี่ยนเป็น: ${STATUS_CONFIG[nextStatus].label}`,
-      });
-
-      setActionDialogOpen(false);
-      setVoteComment('');
-      fetchApplications();
-    } catch (error) {
-      console.error('Error approving:', error);
-      toast({
-        title: 'เกิดข้อผิดพลาด',
-        description: 'ไม่สามารถดำเนินการได้',
-        variant: 'destructive',
-      });
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const getVotePercentage = (app: ApplicationWithDetails) => {
+  const getVoteStats = (app: ApplicationWithDetails) => {
     const votes = app.votes || [];
-    if (votes.length === 0) return 0;
-    const agreeCount = votes.filter(v => v.is_agree).length;
-    return Math.round((agreeCount / votes.length) * 100);
+    const total = votes.length;
+    const agree = votes.filter(v => v.is_agree).length;
+    return { total, agree, percentage: total > 0 ? Math.round((agree / total) * 100) : 0 };
   };
 
   const getUserVote = (app: ApplicationWithDetails) => {
     return app.votes?.find(v => v.committee_id === user?.id);
   };
 
-  const canReviewApplication = (app: ApplicationWithDetails) => {
-    if (!personnelProfile) return false;
-    const requiredStatus = WORKFLOW_STEPS[personnelProfile.position];
-    return app.current_status === requiredStatus;
+  const canReviewApp = (app: ApplicationWithDetails) => {
+    const status = app.current_status as WorkflowStatus;
+    const campusId = app.campus_id || app.student_profile?.department?.faculty?.campus_id;
+    const facultyId = app.student_profile?.department?.faculty_id;
+    const deptId = app.student_profile?.department_id;
+    
+    return canReviewApplication(status, campusId || undefined, facultyId || undefined, deptId || undefined);
   };
 
   const filteredApplications = applications.filter((app) => {
@@ -337,11 +208,12 @@ export default function Approval() {
       app.student_profile?.student_code?.includes(searchQuery);
     
     const matchesCategory = categoryFilter === 'all' || app.award_type_id === categoryFilter;
+    const matchesStatus = statusFilter === 'all' || app.current_status === statusFilter;
 
-    return matchesSearch && matchesCategory;
+    return matchesSearch && matchesCategory && matchesStatus;
   });
 
-  if (authLoading || loading) {
+  if (authLoading || rolesLoading) {
     return (
       <Layout>
         <div className="flex items-center justify-center min-h-[60vh]">
@@ -351,14 +223,14 @@ export default function Approval() {
     );
   }
 
-  if (!isStaff) {
+  if (!hasApproverAccess) {
     return (
       <Layout>
         <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
           <AlertCircle className="h-16 w-16 text-muted-foreground mb-4" />
           <h2 className="text-2xl font-bold mb-2">ไม่มีสิทธิ์เข้าถึง</h2>
           <p className="text-muted-foreground mb-4">
-            คุณไม่มีสิทธิ์ในการอนุมัติเอกสาร
+            คุณไม่มีบทบาทในการอนุมัติเอกสาร
           </p>
           <Button onClick={() => navigate('/')}>กลับหน้าหลัก</Button>
         </div>
@@ -375,15 +247,17 @@ export default function Approval() {
           animate={{ opacity: 1, y: 0 }}
           className="mb-8"
         >
-          <h1 className="text-3xl font-bold mb-2">อนุมัติเอกสาร</h1>
-          <p className="text-muted-foreground">
-            พิจารณาและอนุมัติเอกสารเสนอชื่อนิสิตดีเด่น
+          <h1 className="text-3xl font-bold mb-2">พิจารณาอนุมัติ</h1>
+          <p className="text-muted-foreground mb-4">
+            พิจารณาและอนุมัติใบสมัครนิสิตดีเด่น
           </p>
-          {personnelProfile && (
-            <Badge variant="secondary" className="mt-4">
-              {POSITION_LABELS[personnelProfile.position]}
-            </Badge>
-          )}
+          <div className="flex flex-wrap gap-2">
+            {approverRoles.map(role => (
+              <Badge key={role} variant="secondary">
+                {APP_ROLE_LABELS[role]}
+              </Badge>
+            ))}
+          </div>
         </motion.div>
 
         {/* Filters */}
@@ -396,16 +270,16 @@ export default function Approval() {
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="ค้นหาตามชื่อ รหัสนิสิต หรือรายละเอียด..."
+              placeholder="ค้นหาตามชื่อ รหัสนิสิต..."
               className="pl-10"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
           <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-            <SelectTrigger className="w-full sm:w-[200px]">
+            <SelectTrigger className="w-full sm:w-[180px]">
               <Filter className="h-4 w-4 mr-2" />
-              <SelectValue placeholder="กรองประเภท" />
+              <SelectValue placeholder="ประเภท" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">ทุกประเภท</SelectItem>
@@ -416,239 +290,267 @@ export default function Approval() {
               ))}
             </SelectContent>
           </Select>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-full sm:w-[180px]">
+              <SelectValue placeholder="สถานะ" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">ทุกสถานะ</SelectItem>
+              {Object.entries(STATUS_CONFIG).map(([key, config]) => (
+                <SelectItem key={key} value={key}>
+                  {config.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </motion.div>
 
-        {/* Applications Grid */}
-        <div className="grid gap-4">
-          <AnimatePresence>
-            {filteredApplications.length === 0 ? (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="text-center py-16"
-              >
-                <Search className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-lg font-semibold mb-2">ไม่พบรายการ</h3>
-                <p className="text-muted-foreground">ไม่มีเอกสารที่ต้องพิจารณาในขณะนี้</p>
-              </motion.div>
-            ) : (
-              filteredApplications.map((app, index) => {
-                const votePercentage = getVotePercentage(app);
-                const votes = app.votes || [];
-                const userVote = getUserVote(app);
-                const isPassing = votePercentage > 50;
-                const canReview = canReviewApplication(app);
-                const statusConfig = STATUS_CONFIG[app.current_status as ApplicationStatus];
+        {/* Applications */}
+        {loading ? (
+          <div className="flex items-center justify-center py-16">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        ) : (
+          <div className="grid gap-4">
+            <AnimatePresence>
+              {filteredApplications.length === 0 ? (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="text-center py-16"
+                >
+                  <Search className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold mb-2">ไม่พบรายการ</h3>
+                  <p className="text-muted-foreground">ไม่มีใบสมัครที่ต้องพิจารณา</p>
+                </motion.div>
+              ) : (
+                filteredApplications.map((app, index) => {
+                  const voteStats = getVoteStats(app);
+                  const userVote = getUserVote(app);
+                  const canReview = canReviewApp(app);
+                  const statusConfig = STATUS_CONFIG[app.current_status as ApplicationStatus];
+                  const isCommitteeReview = app.current_status === 'committee_review';
 
-                return (
-                  <motion.div
-                    key={app.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.05 }}
-                  >
-                    <Card className="hover:shadow-md transition-shadow">
-                      <CardContent className="p-6">
-                        <div className="flex flex-col lg:flex-row gap-6">
-                          {/* Left: Application Info */}
-                          <div className="flex-1">
-                            <div className="flex items-start gap-4 mb-4">
-                              <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center text-xl font-bold">
-                                {app.student_profile?.first_name?.charAt(0) || '?'}
-                              </div>
-                              <div className="flex-1">
-                                <h3 className="text-lg font-semibold">
-                                  {app.student_profile?.first_name} {app.student_profile?.last_name}
-                                </h3>
-                                <p className="text-sm text-muted-foreground">
-                                  {app.student_profile?.student_code || 'ไม่ระบุรหัส'} • {app.student_profile?.department?.faculty?.faculty_name}
-                                </p>
-                                <div className="flex flex-wrap gap-2 mt-2">
-                                  <Badge variant="outline">
-                                    {app.award_type?.type_name}
-                                  </Badge>
-                                  <Badge variant={statusConfig?.color as 'default' | 'secondary' | 'destructive'}>
-                                    {statusConfig?.label}
-                                  </Badge>
+                  return (
+                    <motion.div
+                      key={app.id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.03 }}
+                    >
+                      <Card className={`hover:shadow-md transition-shadow ${canReview ? 'ring-2 ring-primary/20' : ''}`}>
+                        <CardContent className="p-6">
+                          <div className="flex flex-col lg:flex-row gap-6">
+                            {/* Left: Info */}
+                            <div className="flex-1">
+                              <div className="flex items-start gap-4 mb-4">
+                                <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center text-xl font-bold shrink-0">
+                                  {app.student_profile?.first_name?.charAt(0) || '?'}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <h3 className="text-lg font-semibold truncate">
+                                    {app.student_profile?.first_name} {app.student_profile?.last_name}
+                                  </h3>
+                                  <p className="text-sm text-muted-foreground">
+                                    {app.student_profile?.student_code || 'ไม่ระบุรหัส'} • {app.student_profile?.department?.faculty?.faculty_name}
+                                  </p>
+                                  <div className="flex flex-wrap gap-2 mt-2">
+                                    <Badge variant="outline">
+                                      {app.award_type?.type_name}
+                                    </Badge>
+                                    <Badge variant={statusConfig?.color as 'default' | 'secondary' | 'destructive'}>
+                                      {statusConfig?.label}
+                                    </Badge>
+                                    {canReview && (
+                                      <Badge variant="default" className="bg-primary">
+                                        รอพิจารณา
+                                      </Badge>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                            
-                            <p className="text-sm text-muted-foreground line-clamp-2 mb-4">
-                              {app.description || 'ไม่มีรายละเอียด'}
-                            </p>
 
-                            <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
-                              <span>ภาคเรียน: {app.period?.semester}/{app.period?.academic_year}</span>
-                              {app.student_profile?.gpax && <span>GPAX: {app.student_profile.gpax}</span>}
-                              {app.activity_hours && <span>ชั่วโมงกิจกรรม: {app.activity_hours}</span>}
-                            </div>
-                          </div>
+                              <p className="text-sm text-muted-foreground line-clamp-2 mb-4">
+                                {app.description || 'ไม่มีรายละเอียด'}
+                              </p>
 
-                          {/* Right: Voting Section */}
-                          <div className="lg:w-80 space-y-4">
-                            {/* Vote Progress */}
-                            <div className="p-4 rounded-lg bg-secondary/50">
-                              <div className="flex items-center justify-between mb-2">
-                                <span className="text-sm font-medium flex items-center gap-2">
-                                  <Users className="h-4 w-4" />
-                                  ผลโหวตคณะกรรมการ
-                                </span>
-                                <span className={`text-sm font-bold ${isPassing ? 'text-green-600' : 'text-orange-600'}`}>
-                                  {votePercentage}%
-                                </span>
-                              </div>
-                              <Progress 
-                                value={votePercentage} 
-                                className={`h-2 ${isPassing ? '[&>div]:bg-green-500' : '[&>div]:bg-orange-500'}`}
-                              />
-                              <div className="flex justify-between mt-2 text-xs text-muted-foreground">
-                                <span>เห็นชอบ: {votes.filter(v => v.is_agree).length}</span>
-                                <span>ไม่เห็นชอบ: {votes.filter(v => !v.is_agree).length}</span>
-                              </div>
-                            </div>
-
-                            {/* Action Buttons */}
-                            <div className="flex flex-col gap-2">
-                              {/* Committee Vote Button */}
-                              {personnelProfile?.position === 'committee_member' || personnelProfile?.position === 'committee_chairman' ? (
-                                <Button
-                                  variant={userVote ? 'outline' : 'default'}
-                                  className="w-full"
-                                  onClick={() => {
-                                    setSelectedApplication(app);
-                                    setVoteComment(userVote?.comment || '');
-                                    setVoteDialogOpen(true);
-                                  }}
-                                >
-                                  <MessageSquare className="h-4 w-4 mr-2" />
-                                  {userVote ? `แก้ไขโหวต (${userVote.is_agree ? 'เห็นชอบ' : 'ไม่เห็นชอบ'})` : 'โหวต'}
-                                </Button>
-                              ) : null}
-
-                              {/* Approval Button */}
-                              {canReview && (
-                                <Button
-                                  variant="hero"
-                                  className="w-full"
-                                  onClick={() => {
-                                    setSelectedApplication(app);
-                                    setVoteComment('');
-                                    setActionDialogOpen(true);
-                                  }}
-                                >
-                                  <ArrowRight className="h-4 w-4 mr-2" />
-                                  ดำเนินการอนุมัติ
-                                </Button>
+                              {/* Vote progress for committee review */}
+                              {isCommitteeReview && (
+                                <div className="mb-4">
+                                  <div className="flex items-center justify-between text-sm mb-1">
+                                    <span className="flex items-center gap-1 text-muted-foreground">
+                                      <Users className="h-4 w-4" />
+                                      โหวต: {voteStats.agree}/{voteStats.total}
+                                    </span>
+                                    <span className={voteStats.percentage > 50 ? 'text-green-600' : 'text-muted-foreground'}>
+                                      {voteStats.percentage}%
+                                    </span>
+                                  </div>
+                                  <Progress value={voteStats.percentage} className="h-2" />
+                                </div>
                               )}
+
+                              {/* Actions */}
+                              <div className="flex flex-wrap gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => openDetail(app)}
+                                  className="gap-2"
+                                >
+                                  <Eye className="h-4 w-4" />
+                                  ดูรายละเอียด
+                                </Button>
+
+                                {(canReview || (isCommitteeReview && isCommitteeMember)) && (
+                                  <ApprovalActions
+                                    applicationId={app.id}
+                                    currentStatus={app.current_status as WorkflowStatus}
+                                    canApprove={canReview && !isCommitteeReview}
+                                    canVote={isCommitteeReview && isCommitteeMember}
+                                    existingVote={userVote}
+                                    onActionComplete={handleActionComplete}
+                                  />
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Right: Timeline (desktop) */}
+                            <div className="hidden lg:block w-64 shrink-0 border-l pl-6">
+                              <WorkflowTimeline currentStatus={app.current_status as WorkflowStatus} />
                             </div>
                           </div>
+                        </CardContent>
+                      </Card>
+                    </motion.div>
+                  );
+                })
+              )}
+            </AnimatePresence>
+          </div>
+        )}
+
+        {/* Detail Sheet */}
+        <Sheet open={detailOpen} onOpenChange={setDetailOpen}>
+          <SheetContent className="w-full sm:max-w-xl overflow-y-auto">
+            {selectedApp && (
+              <>
+                <SheetHeader>
+                  <SheetTitle>รายละเอียดใบสมัคร</SheetTitle>
+                </SheetHeader>
+                
+                <div className="mt-6 space-y-6">
+                  {/* Student Info */}
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base">ข้อมูลนิสิต</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">ชื่อ-นามสกุล</span>
+                        <span className="font-medium">
+                          {selectedApp.student_profile?.first_name} {selectedApp.student_profile?.last_name}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">รหัสนิสิต</span>
+                        <span>{selectedApp.student_profile?.student_code || '-'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">คณะ</span>
+                        <span>{selectedApp.student_profile?.department?.faculty?.faculty_name || '-'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">ภาควิชา</span>
+                        <span>{selectedApp.student_profile?.department?.dept_name || '-'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">GPAX</span>
+                        <span>{selectedApp.student_profile?.gpax || '-'}</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Application Info */}
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base">ข้อมูลใบสมัคร</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3 text-sm">
+                      <div>
+                        <span className="text-muted-foreground">ประเภทรางวัล</span>
+                        <p className="font-medium mt-1">{selectedApp.award_type?.type_name}</p>
+                      </div>
+                      {selectedApp.project_name && (
+                        <div>
+                          <span className="text-muted-foreground">ชื่อโครงการ/ผลงาน</span>
+                          <p className="font-medium mt-1">{selectedApp.project_name}</p>
                         </div>
+                      )}
+                      {selectedApp.description && (
+                        <div>
+                          <span className="text-muted-foreground">รายละเอียด</span>
+                          <p className="mt-1">{selectedApp.description}</p>
+                        </div>
+                      )}
+                      {selectedApp.achievements && (
+                        <div>
+                          <span className="text-muted-foreground">ผลงาน/ความสำเร็จ</span>
+                          <p className="mt-1 whitespace-pre-wrap">{selectedApp.achievements}</p>
+                        </div>
+                      )}
+                      {selectedApp.activity_hours && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">ชั่วโมงกิจกรรม</span>
+                          <span>{selectedApp.activity_hours} ชั่วโมง</span>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* Workflow Timeline */}
+                  <Card>
+                    <CardContent className="pt-6">
+                      <WorkflowTimeline currentStatus={selectedApp.current_status as WorkflowStatus} />
+                    </CardContent>
+                  </Card>
+
+                  {/* Approval History */}
+                  <Card>
+                    <CardContent className="pt-6">
+                      <ApprovalHistory 
+                        applicationId={selectedApp.id} 
+                        refreshTrigger={refreshTrigger}
+                      />
+                    </CardContent>
+                  </Card>
+
+                  {/* Actions */}
+                  {(canReviewApp(selectedApp) || (selectedApp.current_status === 'committee_review' && isCommitteeMember)) && (
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-base">ดำเนินการ</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <ApprovalActions
+                          applicationId={selectedApp.id}
+                          currentStatus={selectedApp.current_status as WorkflowStatus}
+                          canApprove={canReviewApp(selectedApp) && selectedApp.current_status !== 'committee_review'}
+                          canVote={selectedApp.current_status === 'committee_review' && isCommitteeMember}
+                          existingVote={getUserVote(selectedApp)}
+                          onActionComplete={() => {
+                            handleActionComplete();
+                            setDetailOpen(false);
+                          }}
+                        />
                       </CardContent>
                     </Card>
-                  </motion.div>
-                );
-              })
+                  )}
+                </div>
+              </>
             )}
-          </AnimatePresence>
-        </div>
-
-        {/* Vote Dialog */}
-        <Dialog open={voteDialogOpen} onOpenChange={setVoteDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>โหวตเอกสาร</DialogTitle>
-              <DialogDescription>
-                ให้ความเห็นสำหรับการพิจารณาเอกสารนี้
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="p-4 rounded-lg bg-secondary/50">
-                <p className="font-medium">
-                  {selectedApplication?.student_profile?.first_name} {selectedApplication?.student_profile?.last_name}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  {selectedApplication?.award_type?.type_name}
-                </p>
-              </div>
-              <Textarea
-                placeholder="ความคิดเห็น (ไม่บังคับ)"
-                value={voteComment}
-                onChange={(e) => setVoteComment(e.target.value)}
-                rows={3}
-              />
-            </div>
-            <DialogFooter className="flex gap-2">
-              <Button
-                variant="destructive"
-                onClick={() => handleVote(false)}
-                disabled={submitting}
-              >
-                <ThumbsDown className="h-4 w-4 mr-2" />
-                ไม่เห็นชอบ
-              </Button>
-              <Button
-                variant="default"
-                onClick={() => handleVote(true)}
-                disabled={submitting}
-                className="bg-green-600 hover:bg-green-700"
-              >
-                <ThumbsUp className="h-4 w-4 mr-2" />
-                เห็นชอบ
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* Action Dialog */}
-        <Dialog open={actionDialogOpen} onOpenChange={setActionDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>ดำเนินการอนุมัติ</DialogTitle>
-              <DialogDescription>
-                ตรวจสอบและดำเนินการอนุมัติเอกสารนี้
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="p-4 rounded-lg bg-secondary/50">
-                <p className="font-medium">
-                  {selectedApplication?.student_profile?.first_name} {selectedApplication?.student_profile?.last_name}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  {selectedApplication?.award_type?.type_name}
-                </p>
-                <p className="text-sm text-muted-foreground mt-2">
-                  สถานะปัจจุบัน: {STATUS_CONFIG[selectedApplication?.current_status as ApplicationStatus]?.label}
-                </p>
-              </div>
-              <Textarea
-                placeholder="หมายเหตุ (ไม่บังคับ)"
-                value={voteComment}
-                onChange={(e) => setVoteComment(e.target.value)}
-                rows={3}
-              />
-            </div>
-            <DialogFooter className="flex gap-2">
-              <Button
-                variant="destructive"
-                onClick={() => handleApprove(false)}
-                disabled={submitting}
-              >
-                <XCircle className="h-4 w-4 mr-2" />
-                ไม่อนุมัติ
-              </Button>
-              <Button
-                variant="default"
-                onClick={() => handleApprove(true)}
-                disabled={submitting}
-                className="bg-green-600 hover:bg-green-700"
-              >
-                <CheckCircle className="h-4 w-4 mr-2" />
-                อนุมัติ
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+          </SheetContent>
+        </Sheet>
       </div>
     </Layout>
   );
