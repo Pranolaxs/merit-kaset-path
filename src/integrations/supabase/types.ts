@@ -821,6 +821,14 @@ export type Database = {
         Args: { _campus_id: string; _user_id: string }
         Returns: boolean
       }
+      can_access_data_for_campus: {
+        Args: { _campus_id: string; _user_id: string }
+        Returns: boolean
+      }
+      can_access_data_for_department: {
+        Args: { _dept_id: string; _user_id: string }
+        Returns: boolean
+      }
       close_voting_and_proceed: {
         Args: { app_id: string; closer_id: string }
         Returns: boolean
@@ -834,6 +842,10 @@ export type Database = {
           p_user_id: string
         }
         Returns: string
+      }
+      get_accessible_campus_ids: {
+        Args: { _user_id: string }
+        Returns: string[]
       }
       get_personnel_position: {
         Args: { auth_id: string }
