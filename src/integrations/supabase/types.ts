@@ -506,6 +506,54 @@ export type Database = {
           },
         ]
       }
+      notifications: {
+        Row: {
+          created_at: string
+          id: string
+          is_read: boolean
+          message: string
+          related_application_id: string | null
+          title: string
+          type: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_read?: boolean
+          message: string
+          related_application_id?: string | null
+          title: string
+          type?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_read?: boolean
+          message?: string
+          related_application_id?: string | null
+          title?: string
+          type?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_related_application_id_fkey"
+            columns: ["related_application_id"]
+            isOneToOne: false
+            referencedRelation: "applications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       personnel_profiles: {
         Row: {
           created_at: string | null
@@ -776,6 +824,16 @@ export type Database = {
       close_voting_and_proceed: {
         Args: { app_id: string; closer_id: string }
         Returns: boolean
+      }
+      create_notification: {
+        Args: {
+          p_application_id?: string
+          p_message: string
+          p_title: string
+          p_type?: string
+          p_user_id: string
+        }
+        Returns: string
       }
       get_personnel_position: {
         Args: { auth_id: string }

@@ -1,6 +1,6 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Award, Menu, X, User, LogOut, Bell, LogIn } from 'lucide-react';
+import { Award, Menu, X, User, LogOut, LogIn } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useAuth, POSITION_LABELS } from '@/contexts/AuthContext';
 import { Badge } from '@/components/ui/badge';
+import { NotificationBell } from '@/components/notifications/NotificationBell';
 
 const navItems = [
   { path: '/', label: 'หน้าหลัก' },
@@ -107,12 +108,7 @@ export function Header() {
             {authUser ? (
               <>
                 {/* Notifications */}
-                <Button variant="ghost" size="icon" className="relative">
-                  <Bell className="h-5 w-5" />
-                  <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-destructive text-[10px] text-destructive-foreground flex items-center justify-center font-bold">
-                    3
-                  </span>
-                </Button>
+                <NotificationBell />
 
                 {/* User Menu */}
                 <DropdownMenu>
