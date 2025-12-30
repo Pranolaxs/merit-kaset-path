@@ -275,6 +275,74 @@ export type Database = {
         }
         Relationships: []
       }
+      committee_assignments: {
+        Row: {
+          assigned_at: string | null
+          assigned_by: string | null
+          campus_id: string | null
+          created_at: string | null
+          id: string
+          is_active: boolean | null
+          period_id: string
+          role: Database["public"]["Enums"]["app_role"]
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          assigned_at?: string | null
+          assigned_by?: string | null
+          campus_id?: string | null
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          period_id: string
+          role: Database["public"]["Enums"]["app_role"]
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          assigned_at?: string | null
+          assigned_by?: string | null
+          campus_id?: string | null
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          period_id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "committee_assignments_assigned_by_fkey"
+            columns: ["assigned_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "committee_assignments_campus_id_fkey"
+            columns: ["campus_id"]
+            isOneToOne: false
+            referencedRelation: "campuses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "committee_assignments_period_id_fkey"
+            columns: ["period_id"]
+            isOneToOne: false
+            referencedRelation: "academic_periods"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "committee_assignments_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       committee_votes: {
         Row: {
           application_id: string
@@ -348,6 +416,57 @@ export type Database = {
             columns: ["faculty_id"]
             isOneToOne: false
             referencedRelation: "faculties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      endorsements: {
+        Row: {
+          application_id: string
+          comment: string | null
+          created_at: string | null
+          endorsed_at: string | null
+          endorsement_type: string
+          endorser_id: string
+          id: string
+          is_approved: boolean
+          signature_data: string | null
+        }
+        Insert: {
+          application_id: string
+          comment?: string | null
+          created_at?: string | null
+          endorsed_at?: string | null
+          endorsement_type: string
+          endorser_id: string
+          id?: string
+          is_approved: boolean
+          signature_data?: string | null
+        }
+        Update: {
+          application_id?: string
+          comment?: string | null
+          created_at?: string | null
+          endorsed_at?: string | null
+          endorsement_type?: string
+          endorser_id?: string
+          id?: string
+          is_approved?: boolean
+          signature_data?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "endorsements_application_id_fkey"
+            columns: ["application_id"]
+            isOneToOne: false
+            referencedRelation: "applications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "endorsements_endorser_id_fkey"
+            columns: ["endorser_id"]
+            isOneToOne: false
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
         ]
@@ -588,6 +707,63 @@ export type Database = {
         }
         Relationships: []
       }
+      voting_summaries: {
+        Row: {
+          agree_count: number
+          application_id: string
+          closed_by: string | null
+          created_at: string | null
+          disagree_count: number
+          id: string
+          is_passed: boolean | null
+          total_voters: number
+          updated_at: string | null
+          vote_percentage: number | null
+          voting_closed_at: string | null
+        }
+        Insert: {
+          agree_count?: number
+          application_id: string
+          closed_by?: string | null
+          created_at?: string | null
+          disagree_count?: number
+          id?: string
+          is_passed?: boolean | null
+          total_voters?: number
+          updated_at?: string | null
+          vote_percentage?: number | null
+          voting_closed_at?: string | null
+        }
+        Update: {
+          agree_count?: number
+          application_id?: string
+          closed_by?: string | null
+          created_at?: string | null
+          disagree_count?: number
+          id?: string
+          is_passed?: boolean | null
+          total_voters?: number
+          updated_at?: string | null
+          vote_percentage?: number | null
+          voting_closed_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "voting_summaries_application_id_fkey"
+            columns: ["application_id"]
+            isOneToOne: true
+            referencedRelation: "applications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "voting_summaries_closed_by_fkey"
+            columns: ["closed_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -595,6 +771,10 @@ export type Database = {
     Functions: {
       can_access_campus: {
         Args: { _campus_id: string; _user_id: string }
+        Returns: boolean
+      }
+      close_voting_and_proceed: {
+        Args: { app_id: string; closer_id: string }
         Returns: boolean
       }
       get_personnel_position: {
@@ -627,6 +807,7 @@ export type Database = {
       }
       is_approver: { Args: { _user_id: string }; Returns: boolean }
       is_staff_or_admin: { Args: { auth_id: string }; Returns: boolean }
+      update_voting_summary: { Args: { app_id: string }; Returns: undefined }
     }
     Enums: {
       app_role:
