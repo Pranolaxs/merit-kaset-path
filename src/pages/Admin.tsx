@@ -8,11 +8,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Users, Building2, GraduationCap, Shield, MapPin } from 'lucide-react';
+import { Users, Building2, GraduationCap, Shield, MapPin, UserCheck } from 'lucide-react';
 import { POSITION_LABELS } from '@/types/database';
 import type { PersonnelPosition } from '@/types/database';
 import { CampusManagement } from '@/components/admin/CampusManagement';
 import { RoleManagement } from '@/components/admin/RoleManagement';
+import { CommitteeManagement } from '@/components/admin/CommitteeManagement';
 import type { Campus } from '@/types/roles';
 
 interface Faculty {
@@ -147,10 +148,14 @@ export default function Admin() {
         </div>
 
         <Tabs defaultValue="roles" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5 lg:w-[600px]">
+          <TabsList className="grid w-full grid-cols-6 lg:w-[720px]">
             <TabsTrigger value="roles" className="flex items-center gap-2">
               <Shield className="h-4 w-4" />
               <span className="hidden sm:inline">บทบาท</span>
+            </TabsTrigger>
+            <TabsTrigger value="committee" className="flex items-center gap-2">
+              <UserCheck className="h-4 w-4" />
+              <span className="hidden sm:inline">กรรมการ</span>
             </TabsTrigger>
             <TabsTrigger value="campuses" className="flex items-center gap-2">
               <MapPin className="h-4 w-4" />
@@ -173,6 +178,15 @@ export default function Admin() {
           {/* Roles Tab */}
           <TabsContent value="roles">
             <RoleManagement 
+              campuses={campuses} 
+              loading={loadingData} 
+              onRefresh={fetchData} 
+            />
+          </TabsContent>
+
+          {/* Committee Tab */}
+          <TabsContent value="committee">
+            <CommitteeManagement 
               campuses={campuses} 
               loading={loadingData} 
               onRefresh={fetchData} 
