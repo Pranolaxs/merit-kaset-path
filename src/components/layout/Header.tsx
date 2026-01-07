@@ -1,6 +1,6 @@
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Award, Menu, X, User, LogOut, Bell } from 'lucide-react';
+import { Award, Menu, X, User, LogOut, Bell, LogIn } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
@@ -10,17 +10,34 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useAuth } from '@/hooks/useAuth';
 
 const navItems = [
-  { path: '/', label: 'หน้าหลัก' },
-  { path: '/nominations', label: 'รายการเสนอชื่อ' },
-  { path: '/submit', label: 'เสนอตนเอง' },
-  { path: '/approval', label: 'อนุมัติ' },
+  { path: '/', label: 'หน้าหลัก', roles: [] },
+  { path: '/nominations', label: 'รายการเสนอชื่อ', roles: [] },
+  { path: '/submit', label: 'เสนอตนเอง', roles: ['student'] },
+  { path: '/approval', label: 'อนุมัติ', roles: ['department_head', 'associate_dean', 'dean', 'student_affairs', 'committee_member', 'committee_chairman', 'president', 'system_admin'] },
 ];
 
 export function Header() {
   const location = useLocation();
+  const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { user, userProfile, appRoles, signOut, hasAnyRole } = useAuth();
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/auth');
+  };
+
+  const visibleNavItems = navItems.filter(item => {
+    if (item.roles.length === 0) return true;
+    return hasAnyRole(item.roles as any[]);
+  });
+
+  const displayName = userProfile 
+    ? `${userProfile.firstName} ${userProfile.lastName}`.trim() || userProfile.email
+    : user?.email || 'ผู้ใช้';
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/50 glass">
@@ -46,7 +63,7 @@ export function Header() {
 
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center gap-1">
-            {navItems.map((item) => {
+            {visibleNavItems.map((item) => {
               const isActive = location.pathname === item.path;
               return (
                 <Link key={item.path} to={item.path}>
@@ -74,38 +91,49 @@ export function Header() {
 
           {/* Right Section */}
           <div className="flex items-center gap-2">
-            {/* Notifications */}
-            <Button variant="ghost" size="icon" className="relative">
-              <Bell className="h-5 w-5" />
-              <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-destructive text-[10px] text-destructive-foreground flex items-center justify-center font-bold">
-                3
-              </span>
-            </Button>
-
-            {/* User Menu */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="gap-2">
-                  <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
-                    <User className="h-4 w-4 text-primary" />
-                  </div>
-                  <span className="hidden sm:inline text-sm font-medium">
-                    สมชาย ใจดี
+            {user ? (
+              <>
+                {/* Notifications */}
+                <Button variant="ghost" size="icon" className="relative">
+                  <Bell className="h-5 w-5" />
+                  <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-destructive text-[10px] text-destructive-foreground flex items-center justify-center font-bold">
+                    3
                   </span>
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem>
-                  <User className="mr-2 h-4 w-4" />
-                  โปรไฟล์
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem className="text-destructive">
-                  <LogOut className="mr-2 h-4 w-4" />
-                  ออกจากระบบ
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+
+                {/* User Menu */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" className="gap-2">
+                      <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
+                        <User className="h-4 w-4 text-primary" />
+                      </div>
+                      <span className="hidden sm:inline text-sm font-medium max-w-[120px] truncate">
+                        {displayName}
+                      </span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    <DropdownMenuItem>
+                      <User className="mr-2 h-4 w-4" />
+                      โปรไฟล์
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={handleSignOut} className="text-destructive">
+                      <LogOut className="mr-2 h-4 w-4" />
+                      ออกจากระบบ
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </>
+            ) : (
+              <Button asChild variant="default" className="gap-2">
+                <Link to="/auth">
+                  <LogIn className="h-4 w-4" />
+                  เข้าสู่ระบบ
+                </Link>
+              </Button>
+            )}
 
             {/* Mobile Menu Button */}
             <Button
@@ -128,7 +156,7 @@ export function Header() {
             className="md:hidden py-4 border-t border-border/50"
           >
             <div className="flex flex-col gap-2">
-              {navItems.map((item) => {
+              {visibleNavItems.map((item) => {
                 const isActive = location.pathname === item.path;
                 return (
                   <Link
@@ -145,6 +173,15 @@ export function Header() {
                   </Link>
                 );
               })}
+              {!user && (
+                <Link
+                  to="/auth"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="px-4 py-3 rounded-lg text-sm font-medium bg-primary text-primary-foreground"
+                >
+                  เข้าสู่ระบบ
+                </Link>
+              )}
             </div>
           </motion.nav>
         )}
