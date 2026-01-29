@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ArrowRight, ArrowLeft, Upload, Plus, X, CheckCircle } from 'lucide-react';
+import { ArrowRight, ArrowLeft, Upload, Plus, X, CheckCircle, Loader2 } from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,16 +10,56 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { CategoryCard } from '@/components/nomination/CategoryCard';
 import { AWARD_CATEGORIES, type AwardCategory } from '@/types/nomination';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
+import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 type Step = 'category' | 'info' | 'achievements' | 'review';
 
+// Map frontend category to database type_code
+const categoryToTypeCode: Record<AwardCategory, string> = {
+  extracurricular: 'extracurricular',
+  creativity: 'creativity',
+  good_conduct: 'good_conduct',
+};
+
 export default function Submit() {
+  const navigate = useNavigate();
+  const { userProfile } = useAuth();
   const [currentStep, setCurrentStep] = useState<Step>('category');
   const [selectedCategory, setSelectedCategory] = useState<AwardCategory | null>(null);
   const [description, setDescription] = useState('');
+  const [projectName, setProjectName] = useState('');
   const [achievements, setAchievements] = useState<string[]>(['']);
   const [activityHours, setActivityHours] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Fetch award types
+  const { data: awardTypes } = useQuery({
+    queryKey: ['award-types'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('award_types')
+        .select('*');
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Fetch active academic period
+  const { data: activePeriod } = useQuery({
+    queryKey: ['active-period'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('academic_periods')
+        .select('*')
+        .eq('is_active', true)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+  });
 
   const steps: { key: Step; label: string }[] = [
     { key: 'category', label: 'เลือกประเภท' },
@@ -56,10 +97,53 @@ export default function Submit() {
     }
   };
 
-  const handleSubmit = () => {
-    toast.success('ส่งเสนอชื่อสำเร็จ!', {
-      description: 'ระบบได้รับข้อมูลของคุณแล้ว',
-    });
+  const handleSubmit = async () => {
+    if (!selectedCategory || !userProfile || !activePeriod) {
+      toast.error('ข้อมูลไม่ครบถ้วน');
+      return;
+    }
+
+    // Find award type by type_code
+    const awardType = awardTypes?.find(
+      (at) => at.type_code === categoryToTypeCode[selectedCategory]
+    );
+
+    if (!awardType) {
+      toast.error('ไม่พบประเภทรางวัล');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const { error } = await supabase
+        .from('applications')
+        .insert({
+          student_id: userProfile.id,
+          period_id: activePeriod.id,
+          award_type_id: awardType.id,
+          activity_hours: activityHours ? parseInt(activityHours) : null,
+          current_status: 'submitted',
+          description: description.trim(),
+          achievements: JSON.stringify(achievements.filter((a) => a.trim())),
+          project_name: projectName.trim() || null,
+        });
+
+      if (error) throw error;
+
+      toast.success('ส่งเสนอชื่อสำเร็จ!', {
+        description: 'ระบบได้รับข้อมูลของคุณแล้ว รอการพิจารณาจากอาจารย์',
+      });
+
+      navigate('/nominations');
+    } catch (error) {
+      console.error('Submit error:', error);
+      toast.error('เกิดข้อผิดพลาด', {
+        description: 'ไม่สามารถส่งข้อมูลได้ กรุณาลองใหม่อีกครั้ง',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const addAchievement = () => {
@@ -170,6 +254,18 @@ export default function Submit() {
                 <CardDescription>กรอกข้อมูลเกี่ยวกับตัวคุณและเหตุผลในการเสนอตนเอง</CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
+                {selectedCategory === 'creativity' && (
+                  <div className="space-y-2">
+                    <Label htmlFor="projectName">ชื่อโครงการ/ผลงาน</Label>
+                    <Input
+                      id="projectName"
+                      placeholder="เช่น แอปพลิเคชัน Vision Helper"
+                      value={projectName}
+                      onChange={(e) => setProjectName(e.target.value)}
+                    />
+                  </div>
+                )}
+
                 <div className="space-y-2">
                   <Label htmlFor="description">เหตุผลในการเสนอตนเอง *</Label>
                   <Textarea
@@ -265,6 +361,13 @@ export default function Submit() {
                   </p>
                 </div>
 
+                {projectName && (
+                  <div className="p-4 rounded-lg bg-secondary/50">
+                    <p className="text-sm text-muted-foreground mb-1">ชื่อโครงการ/ผลงาน</p>
+                    <p className="font-medium text-foreground">{projectName}</p>
+                  </div>
+                )}
+
                 <div className="p-4 rounded-lg bg-secondary/50">
                   <p className="text-sm text-muted-foreground mb-1">เหตุผลในการเสนอตนเอง</p>
                   <p className="text-foreground">{description}</p>
@@ -290,6 +393,15 @@ export default function Submit() {
                       ))}
                   </ul>
                 </div>
+
+                {activePeriod && (
+                  <div className="p-4 rounded-lg bg-secondary/50">
+                    <p className="text-sm text-muted-foreground mb-1">ปีการศึกษา</p>
+                    <p className="font-medium text-foreground">
+                      ภาคการศึกษาที่ {activePeriod.semester}/{activePeriod.academic_year}
+                    </p>
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}
@@ -305,7 +417,7 @@ export default function Submit() {
           <Button
             variant="outline"
             onClick={handleBack}
-            disabled={currentStepIndex === 0}
+            disabled={currentStepIndex === 0 || isSubmitting}
             className="gap-2"
           >
             <ArrowLeft className="h-4 w-4" />
@@ -313,9 +425,23 @@ export default function Submit() {
           </Button>
 
           {currentStep === 'review' ? (
-            <Button variant="hero" onClick={handleSubmit} className="gap-2">
-              ส่งเสนอชื่อ
-              <CheckCircle className="h-4 w-4" />
+            <Button 
+              variant="hero" 
+              onClick={handleSubmit} 
+              disabled={isSubmitting}
+              className="gap-2"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  กำลังส่ง...
+                </>
+              ) : (
+                <>
+                  ส่งเสนอชื่อ
+                  <CheckCircle className="h-4 w-4" />
+                </>
+              )}
             </Button>
           ) : (
             <Button variant="hero" onClick={handleNext} className="gap-2">
