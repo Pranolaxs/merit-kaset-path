@@ -11,6 +11,7 @@ import NominationDetail from "./pages/NominationDetail";
 import Submit from "./pages/Submit";
 import Approval from "./pages/Approval";
 import Auth from "./pages/Auth";
+import ProfileSetup from "./pages/ProfileSetup";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -24,6 +25,11 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             <Route path="/auth" element={<Auth />} />
+            <Route path="/profile-setup" element={
+              <ProtectedRoute>
+                <ProfileSetup />
+              </ProtectedRoute>
+            } />
             <Route path="/" element={<Index />} />
             <Route path="/nominations" element={
               <ProtectedRoute>
@@ -41,11 +47,15 @@ const App = () => (
               </ProtectedRoute>
             } />
             <Route path="/approval" element={
-              <ProtectedRoute requiredRoles={[
-                'department_head', 'associate_dean', 'dean', 
-                'student_affairs', 'committee_member', 
-                'committee_chairman', 'president', 'system_admin'
-              ]}>
+              <ProtectedRoute 
+                excludeRoles={['student']}
+                requiredRoles={[
+                  'department_head', 'associate_dean', 'dean', 
+                  'student_affairs', 'committee_member', 
+                  'committee_chairman', 'president', 'system_admin'
+                ]}
+                requireProfileComplete
+              >
                 <Approval />
               </ProtectedRoute>
             } />

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { CheckCircle, Loader2 } from 'lucide-react';
+import { CheckCircle, Loader2, AlertCircle } from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
 import { Card, CardContent } from '@/components/ui/card';
 import { ApprovalCard } from '@/components/approval/ApprovalCard';
@@ -9,9 +9,10 @@ import { ApprovalDialog } from '@/components/approval/ApprovalDialog';
 import { useApprovalApplications, useApplicationStats, useApproveApplication } from '@/hooks/useApplications';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 export default function Approval() {
-  const { appRoles } = useAuth();
+  const { appRoles, userProfile, isProfileComplete } = useAuth();
   const { data: applications, isLoading } = useApprovalApplications();
   const { data: stats } = useApplicationStats();
   const approveApplication = useApproveApplication();
@@ -24,7 +25,7 @@ export default function Approval() {
   const [comment, setComment] = useState('');
 
   // Get primary role for approval action
-  const primaryRole = appRoles?.[0] || 'student';
+  const primaryRole = appRoles?.find(role => role !== 'student') || appRoles?.[0] || 'student';
 
   const handleAction = (applicationId: string, type: 'approve' | 'reject') => {
     setActionDialog({ open: true, type, applicationId });
@@ -69,8 +70,24 @@ export default function Approval() {
           <h1 className="text-3xl font-bold text-foreground mb-2">อนุมัติรายการ</h1>
           <p className="text-muted-foreground">
             ตรวจสอบและอนุมัติรายการเสนอชื่อนิสิตดีเด่น
+            {userProfile?.facultyId && (
+              <span className="ml-2 text-primary">
+                (เฉพาะรายการในสังกัดของท่าน)
+              </span>
+            )}
           </p>
         </motion.div>
+
+        {/* Scope Info */}
+        {!isProfileComplete && (
+          <Alert className="mb-6">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>โปรไฟล์ไม่สมบูรณ์</AlertTitle>
+            <AlertDescription>
+              กรุณาตั้งค่าคณะ/ภาควิชาที่สังกัดเพื่อดูรายการอนุมัติ
+            </AlertDescription>
+          </Alert>
+        )}
 
         {/* Stats */}
         <ApprovalStats

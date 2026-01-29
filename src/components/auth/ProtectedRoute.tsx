@@ -10,14 +10,18 @@ interface ProtectedRouteProps {
   children: ReactNode;
   requiredRoles?: AppRole[];
   requireAnyRole?: boolean;
+  excludeRoles?: AppRole[];
+  requireProfileComplete?: boolean;
 }
 
 export function ProtectedRoute({ 
   children, 
   requiredRoles, 
-  requireAnyRole = true 
+  requireAnyRole = true,
+  excludeRoles,
+  requireProfileComplete = false,
 }: ProtectedRouteProps) {
-  const { user, appRoles, isLoading, hasRole, hasAnyRole } = useAuth();
+  const { user, appRoles, isLoading, hasRole, hasAnyRole, isProfileComplete } = useAuth();
   const location = useLocation();
 
   if (isLoading) {
@@ -32,7 +36,22 @@ export function ProtectedRoute({
     return <Navigate to="/auth" state={{ from: location }} replace />;
   }
 
-  // Check roles if required
+  // Check excluded roles
+  if (excludeRoles && excludeRoles.length > 0) {
+    const hasExcludedRole = excludeRoles.some(role => hasRole(role));
+    if (hasExcludedRole) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-background">
+          <div className="text-center">
+            <h1 className="text-2xl font-bold text-foreground mb-2">ไม่มีสิทธิ์เข้าถึง</h1>
+            <p className="text-muted-foreground">คุณไม่มีสิทธิ์ในการเข้าถึงหน้านี้</p>
+          </div>
+        </div>
+      );
+    }
+  }
+
+  // Check required roles
   if (requiredRoles && requiredRoles.length > 0) {
     const hasAccess = requireAnyRole 
       ? hasAnyRole(requiredRoles)
@@ -48,6 +67,11 @@ export function ProtectedRoute({
         </div>
       );
     }
+  }
+
+  // Check if profile setup is required
+  if (requireProfileComplete && !isProfileComplete) {
+    return <Navigate to="/profile-setup" state={{ from: location }} replace />;
   }
 
   return <>{children}</>;
