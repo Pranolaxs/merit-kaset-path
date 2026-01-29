@@ -1,18 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
-import { Database } from '@/integrations/supabase/types';
-
-type AppRole = Database['public']['Enums']['app_role'];
-type UserRole = Database['public']['Enums']['user_role'];
-
-interface UserProfile {
-  id: string;
-  email: string;
-  role: UserRole;
-  firstName: string;
-  lastName: string;
-}
+import { fetchUserProfile, fetchAppRoles, type UserProfile, type AppRole } from '@/lib/services/auth';
 
 interface AuthContextType {
   user: User | null;
@@ -27,6 +16,8 @@ interface AuthContextType {
   hasRole: (role: AppRole) => boolean;
   hasAnyRole: (roles: AppRole[]) => boolean;
   isApprover: boolean;
+  isProfileComplete: boolean;
+  refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -38,67 +29,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [appRoles, setAppRoles] = useState<AppRole[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const fetchUserProfile = async (userId: string) => {
-    try {
-      // Get user from users table
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('id, email, role')
-        .eq('auth_user_id', userId)
-        .single();
+  const loadProfile = async (userId: string) => {
+    const profile = await fetchUserProfile(userId);
+    if (profile) {
+      setUserProfile(profile);
+      const roles = await fetchAppRoles(profile.id);
+      setAppRoles(roles);
+    }
+  };
 
-      if (userError || !userData) {
-        console.error('Error fetching user:', userError);
-        return;
-      }
-
-      // Get profile based on role
-      let firstName = '';
-      let lastName = '';
-
-      if (userData.role === 'student') {
-        const { data: studentProfile } = await supabase
-          .from('student_profiles')
-          .select('first_name, last_name')
-          .eq('user_id', userData.id)
-          .single();
-        
-        if (studentProfile) {
-          firstName = studentProfile.first_name;
-          lastName = studentProfile.last_name;
-        }
-      } else {
-        const { data: personnelProfile } = await supabase
-          .from('personnel_profiles')
-          .select('first_name, last_name')
-          .eq('user_id', userData.id)
-          .single();
-        
-        if (personnelProfile) {
-          firstName = personnelProfile.first_name;
-          lastName = personnelProfile.last_name;
-        }
-      }
-
-      setUserProfile({
-        id: userData.id,
-        email: userData.email,
-        role: userData.role,
-        firstName,
-        lastName,
-      });
-
-      // Fetch app roles
-      const { data: rolesData } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', userData.id);
-
-      if (rolesData) {
-        setAppRoles(rolesData.map(r => r.role));
-      }
-    } catch (error) {
-      console.error('Error in fetchUserProfile:', error);
+  const refreshProfile = async () => {
+    if (user) {
+      await loadProfile(user.id);
     }
   };
 
@@ -112,7 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Defer Supabase calls with setTimeout to avoid deadlock
         if (session?.user) {
           setTimeout(() => {
-            fetchUserProfile(session.user.id);
+            loadProfile(session.user.id);
           }, 0);
         } else {
           setUserProfile(null);
@@ -127,7 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        fetchUserProfile(session.user.id);
+        loadProfile(session.user.id);
       }
       setIsLoading(false);
     });
@@ -201,6 +143,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     'president',
   ]);
 
+  // Check if profile is complete (has department/faculty for approvers)
+  const isProfileComplete = userProfile?.role === 'student' 
+    ? !!userProfile?.departmentId 
+    : (isApprover ? !!userProfile?.facultyId : true);
+
   return (
     <AuthContext.Provider
       value={{
@@ -216,6 +163,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         hasRole,
         hasAnyRole,
         isApprover,
+        isProfileComplete,
+        refreshProfile,
       }}
     >
       {children}
